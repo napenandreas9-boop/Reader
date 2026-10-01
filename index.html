@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Read File Aloud</title>
+<style>
+  /* ============================================================
+     BASE
+     ============================================================ */
+  * { box-sizing: border-box; }
+
+  :root {
+    --bg-deep: #060912;
+    --stroke: rgba(129, 140, 248, .18);
+    --stroke-soft: rgba(148, 163, 184, .13);
+    --text: #e8eefc;
+    --muted: #94a3b8;
+    --c1: #38bdf8;
+    --c2: #818cf8;
+    --c3: #c084fc;
+  }
+
+  html, body { min-height: 100%; }
+
+  body {
+    margin: 0;
+    padding: 30px 18px 54px;
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, Inter, Arial, sans-serif;
+    color: var(--text);
+    background: var(--bg-deep);
+    display: flex;
+    justify-content: center;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* soft animated aurora behind everything */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -25%;
+    z-index: -1;
+    background:
+      radial-gradient(50% 45% at 15% 8%,  rgba(56, 189, 248, .22), transparent 62%),
+      radial-gradient(45% 42% at 85% 4%,  rgba(192, 132, 252, .20), transparent 62%),
+      radial-gradient(55% 50% at 50% 108%, rgba(129, 140, 248, .20), transparent 66%);
+    filter: blur(24px);
+    animation: drift 26s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    from { transform: translate3d(0, 0, 0) scale(1); }
+    to   { transform: translate3d(0, -3.5%, 0) scale(1.07); }
+  }
+
+  /* ============================================================
+     CARD
+     ============================================================ */
+  .container {
+    position: relative;
+    width: 100%;
+    max-width: 880px;
+    padding: 30px 28px 26px;
+    border-radius: 24px;
+    border: 1px solid var(--stroke);
+    background: linear-gradient(180deg, rgba(24, 33, 56, .84), rgba(13, 19, 34, .88));
+    box-shadow:
+      0 34px 80px -26px rgba(0, 0, 0, .9),
+      inset 0 1px 0 rgba(255, 255, 255, .06);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    animation: rise .65s cubic-bezier(.2, .8, .2, 1) both;
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(20px) scale(.99); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  /* ============================================================
+     HEADER
+     ============================================================ */
+  h1 {
+    margin: 0;
+    text-align: center;
+    font-size: clamp(1.45rem, 3.8vw, 1.95rem);
+    letter-spacing: -.02em;
+    background: linear-gradient(100deg, #7dd3fc, #a5b4fc 45%, #e879f9 80%, #7dd3fc);
+    background-size: 250% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: sheen 8s linear infinite;
+  }
+  @keyframes sheen { to { background-position: 250% 0; } }
+
+  .subtitle {
+    margin: 8px auto 22px;
+    max-width: 46ch;
+    text-align: center;
+    font-size: .87rem;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  /* ============================================================
+     PANELS
+     ============================================================ */
+  .panel {
+    border: 1px solid var(--stroke-soft);
+    background: rgba(9, 14, 26, .45);
+    border-radius: 18px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .panel-title {
+    font-size: .7rem;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: #8fa0bd;
+  }
+  .counts {
+    font-size: .74rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    padding: 4px 10px;
+    border-radius: 99px;
+    background: rgba(148, 163, 184, .1);
+    border: 1px solid var(--stroke-soft);
+  }
+
+  /* ============================================================
+     BUTTONS
+     ============================================================ */
+  .btn, .file-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font: inherit;
+    font-weight: 600;
+    padding: 11px 18px;
+    border-radius: 12px;
+    border: 1px solid var(--stroke);
+    background: rgba(39, 52, 73, .72);
+    color: var(--text);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    transition: transform .18s ease, box-shadow .18s ease,
+                background .18s ease, border-color .18s ease, opacity .18s ease;
+  }
+  .btn:hover:not(:disabled),
+  .file-btn:hover {
+    transform: translateY(-2px);
+    border-color: rgba(129, 140, 248, .5);
+    box-shadow: 0 12px 26px -12px rgba(56, 189, 248, .75);
+  }
+  .btn:active:not(:disabled),
+  .file-btn:active { transform: translateY(0) scale(.98); }
+  .btn:focus-visible,
+  .file-btn:focus-visible,
+  select:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, .28);
+  }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  .primary {
+    border: none;
+    color: #05101f;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--c1), var(--c2));
+    box-shadow: 0 12px 28px -14px rgba(56, 189, 248, .95);
+  }
+  .primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #5cc9fa, #9aa4ff);
+    box-shadow: 0 18px 38px -14px rgba(129, 140, 248, 1);
+  }
+
+  .ghost { background: rgba(148, 163, 184, .1); }
+
+  .stop {
+    background: rgba(127, 29, 29, .28);
+    border-color: rgba(248, 113, 113, .34);
+    color: #fca5a5;
+  }
+  .stop:hover {
+    background: rgba(127, 29, 29, .44);
+    border-color: rgba(248, 113, 113, .55);
+    box-shadow: 0 12px 26px -12px rgba(248, 113, 113, .8);
+  }
+
+  .big { padding: 13px 30px; font-size: 1rem; }
+
+  input[type=file] { display: none; }
+
+  /* ============================================================
+     ROWS / GRID
+     ============================================================ */
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+  }
+  .row.center { justify-content: center; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 7px; }
+  .field > span {
+    font-size: .68rem;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: #8fa0bd;
+  }
+
+  select {
+    width: 100%;
+    font: inherit;
+    font-size: .93rem;
+    padding: 11px 38px 11px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--stroke);
+    background-color: rgba(17, 25, 42, .92);
+    color: var(--text);
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 14px;
+    transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
+  }
+  select:hover { border-color: rgba(129, 140, 248, .45); }
+  select option { background: #111a2b; color: #e8eefc; }
+
+  /* ============================================================
+     FILE INFO
+     ============================================================ */
+  .file-info {
+    margin-top: 12px;
+    text-align: center;
+    font-size: .83rem;
+    color: var(--muted);
+  }
+
+  /* ============================================================
+     OUTPUT
+     ============================================================ */
+  .output {
+    margin: 0;
+    min-height: 190px;
+    max-height: 350px;
+    overflow-y: auto;
+    padding: 18px 20px;
+    border-radius: 14px;
+    border: 1px solid var(--stroke-soft);
+    background: linear-gradient(180deg, rgba(7, 11, 22, .92), rgba(10, 15, 28, .78));
+    color: #c7d3ea;
+    font-size: .98rem;
+    line-height: 1.85;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    scroll-behavior: smooth;
+  }
+  .output.empty { color: #5c6b85; font-style: italic; }
+
+  .output::-webkit-scrollbar { width: 10px; }
+  .output::-webkit-scrollbar-track { background: transparent; }
+  .output::-webkit-scrollbar-thumb {
+    background: rgba(129, 140, 248, .28);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 99px;
+  }
+  .output::-webkit-scrollbar-thumb:hover {
+    background: rgba(129, 140, 248, .55);
+    background-clip: content-box;
+  }
+
+  /* word-level highlight while speaking */
+  .unit {
+    border-radius: 5px;
+    transition: background-color .25s ease, color .25s ease, box-shadow .25s ease;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  .unit.speaking {
+    color: #ffffff;
+    background: linear-gradient(90deg, rgba(56, 189, 248, .30), rgba(192, 132, 252, .30));
+    box-shadow: 0 0 0 1px rgba(129, 140, 248, .35),
+                0 0 20px -4px rgba(56, 189, 248, .8);
+  }
+
+  /* translated block */
+  .translated-title {
+    display: none;
+    margin: 4px 0 8px;
+    font-size: .68rem;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--c3);
+  }
+  #translatedOutput { display: none; max-height: 220px; }
+
+  /* ============================================================
+     PROGRESS
+     ============================================================ */
+  .progress {
+    height: 6px;
+    margin-top: 14px;
+    border-radius: 99px;
+    background: rgba(148, 163, 184, .12);
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    width: 0%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--c1), var(--c2), var(--c3));
+    box-shadow: 0 0 14px rgba(129, 140, 248, .75);
+    transition: width .35s ease;
+  }
+
+  /* ============================================================
+     STATUS
+     ============================================================ */
+  .status {
+    margin-top: 10px;
+    min-height: 1.4em;
+    text-align: center;
+    font-size: .88rem;
+    color: var(--muted);
+    transition: color .2s ease;
+  }
+  .status.ok   { color: #4ade80; }
+  .status.warn { color: #fbbf24; }
+  .status.err  { color: #f87171; }
+
+  @media (max-width: 520px) {
+    .container { padding: 22px 16px 20px; border-radius: 20px; }
+    .panel { padding: 13px; }
+    .btn, .file-btn { padding: 10px 14px; font-size: .9rem; }
+    .big { padding: 12px 22px; }
+    .output { font-size: .93rem; padding: 15px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>📖 Read File Aloud</h1>
+  <p class="subtitle">
+    Load a text file — or listen to the built‑in story — then choose a voice,
+    a language, and optional translation.
+  </p>
+
+  <!-- STEP 1 : choose a file -->
+  <section class="panel">
+    <div class="row center">
+      <label class="file-btn" for="fileInput">📁 Choose File</label>
+      <input type="file" id="fileInput" accept=".txt,.md,.csv,.json,text/plain">
+      <button id="readBtn" class="btn primary">📄 Read File</button>
+      <button id="sampleBtn" class="btn ghost">✨ Sample Story</button>
+    </div>
+    <div id="fileInfo" class="file-info">No file selected — showing the built‑in sample story.</div>
+  </section>
+
+  <!-- TEXT DISPLAY -->
+  <section class="panel">
+    <div class="panel-head">
+      <span class="panel-title">Text</span>
+      <span id="counts" class="counts">0 words</span>
+    </div>
+    <p id="output" class="output"></p>
+
+    <div class="translated-title" id="translatedTitle">🌐 Translation</div>
+    <p id="translatedOutput" class="output"></p>
+
+    <div class="progress"><div id="progressBar" class="progress-bar"></div></div>
+  </section>
+
+  <!-- STEP 2 : voice + languages -->
+  <section class="panel">
+    <div class="grid">
+      <label class="field">
+        <span>Voice</span>
+        <select id="genderSelect">
+          <option value="female">👩 Female</option>
+          <option value="male">👨 Male</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Text language</span>
+        <select id="sourceLang"></select>
+      </label>
+
+      <label class="field">
+        <span>Translate to</span>
+        <select id="targetLang"></select>
+      </label>
+    </div>
+  </section>
+
+  <!-- STEP 3 : speak / stop -->
+  <div class="row center">
+    <button id="speakBtn" class="btn primary big">🔊 Speak</button>
+    <button id="stopBtn" class="btn stop big">⏹ Stop</button>
+  </div>
+
+  <div id="status" class="status">Ready — press Speak to hear the story.</div>
+</div>
+
+<script>
+/* =========================================================
+   0. DEFAULT STORY
+   ========================================================= */
+const SAMPLE_TEXT = `Isabella had always felt as though she belonged somewhere else.
+
+One morning, she woke up and decided that the ordinary rules of the world simply did not apply to her. She imagined herself living in another world—a magical place where she could choose her own path and do whatever made her happy.
+
+So Isabella stopped worrying about what everyone else thought. She explored strange forests, danced beneath the stars, laughed loudly, and followed her heart wherever it led.
+
+One day, during one of her adventures, she met a kind and mysterious man named Mr. Premper. At first, they were simply friends, but as they spent more time together, their friendship slowly grew into love.
+
+Eventually, Isabella discovered that she was going to have a baby. The news changed everything. She realized that living only for herself was no longer enough—she now had someone else to love and protect.
+
+Mr. Premper stayed beside her, supporting her through every difficult day. Together, they prepared for the arrival of their little one.
+
+At last, the baby was born, healthy and beautiful. Isabella held the newborn in her arms and smiled through happy tears. For the first time, her imaginary world didn't seem so far away.
+
+She had found something better than a fantasy: a family of her own.
+
+Isabella, Mr. Premper, and their baby built a peaceful life together. They laughed, explored, celebrated little moments, and loved one another deeply.
+
+And so Isabella finally understood that the happiest world wasn't one where she could do anything without caring about others.
+
+It was a world where she had people worth caring about.
+
+And they lived happily ever after.`;
+
+/* =========================================================
+   1. LANGUAGE LIST
+   ========================================================= */
+const LANGUAGES = {
+  en: { name: 'English',    speech: 'en-US', mm: 'en'    },
+  es: { name: 'Spanish',    speech: 'es-ES', mm: 'es'    },
+  fr: { name: 'French',     speech: 'fr-FR', mm: 'fr'    },
+  de: { name: 'German',     speech: 'de-DE', mm: 'de'    },
+  it: { name: 'Italian',    speech: 'it-IT', mm: 'it'    },
+  pt: { name: 'Portuguese', speech: 'pt-PT', mm: 'pt'    },
+  ru: { name: 'Russian',    speech: 'ru-RU', mm: 'ru'    },
+  hi: { name: 'Hindi',      speech: 'hi-IN', mm: 'hi'    },
+  ar: { name: 'Arabic',     speech: 'ar-SA', mm: 'ar'    },
+  zh: { name: 'Chinese',    speech: 'zh-CN', mm: 'zh-CN' },
+  ja: { name: 'Japanese',   speech: 'ja-JP', mm: 'ja'    },
+  ko: { name: 'Korean',     speech: 'ko-KR', mm: 'ko'    },
+  tr: { name: 'Turkish',    speech: 'tr-TR', mm: 'tr'    },
+  nl: { name: 'Dutch',      speech: 'nl-NL', mm: 'nl'    },
+  pl: { name: 'Polish',     speech: 'pl-PL', mm: 'pl'    }
+};
+
+/* =========================================================
+   2. ELEMENTS
+   ========================================================= */
+const fileInput        = document.getElementById('fileInput');
+const readBtn          = document.getElementById('readBtn');
+const sampleBtn        = document.getElementById('sampleBtn');
+const fileInfo         = document.getElementById('fileInfo');
+const output           = document.getElementById('output');
+const counts           = document.getElementById('counts');
+const translatedTitle  = document.getElementById('translatedTitle');
+const translatedOutput = document.getElementById('translatedOutput');
+const genderSelect     = document.getElementById('genderSelect');
+const sourceLang       = document.getElementById('sourceLang');
+const targetLang       = document.getElementById('targetLang');
+const speakBtn         = document.getElementById('speakBtn');
+const stopBtn          = document.getElementById('stopBtn');
+const statusEl         = document.getElementById('status');
+const progressBar      = document.getElementById('progressBar');
+
+let loadedText = SAMPLE_TEXT;
+
+/* =========================================================
+   3. POPULATE LANGUAGE DROPDOWNS
+   ========================================================= */
+for (const code in LANGUAGES) {
+  sourceLang.add(new Option(LANGUAGES[code].name, code));
+  targetLang.add(new Option(LANGUAGES[code].name, code));
+}
+targetLang.add(new Option('— No translation —', 'none'));
+
+sourceLang.value = 'en';
+targetLang.value = 'none';
+
+/* =========================================================
+   4. HELPERS
+   ========================================================= */
+function setStatus(message, type) {
+  statusEl.textContent = message;
+  statusEl.className = 'status ' + (type || '');
+}
+
+function setProgress(percent) {
+  progressBar.style.width = Math.max(0, Math.min(100, percent)) + '%';
+}
+
+/* ---------------------------------------------------------
+   Turn raw text into small "units" (sentence-ish pieces)
+   so we can chunk, speak and highlight them reliably.
+   --------------------------------------------------------- */
+const TOKEN_RE = /\s+|[^\s][^.!?。！？]*(?:[.!?。！？]+|$)/g;
+const UNIT_MAX = 180;
+
+function buildUnits(text) {
+  const tokens = text.match(TOKEN_RE) || [];
+
+  // merge whitespace into the previous token so nothing is lost
+  const raw = [];
+  for (const token of tokens) {
+    if (/^\s+$/.test(token) && raw.length) raw[raw.length - 1] += token;
+    else raw.push(token);
+  }
+
+  // hard-split anything longer than UNIT_MAX
+  const units = [];
+  for (const piece of raw) {
+    if (piece.length <= UNIT_MAX) { units.push(piece); continue; }
+    let rest = piece;
+    while (rest.length > UNIT_MAX) {
+      let cut = rest.lastIndexOf(' ', UNIT_MAX);
+      if (cut < UNIT_MAX * 0.6) cut = UNIT_MAX;
+      units.push(rest.slice(0, cut));
+      rest = rest.slice(cut);
+    }
+    if (rest) units.push(rest);
+  }
+  return units;
+}
+
+/* Group units into chunks no longer than maxLength. */
+function chunkUnits(units, maxLength) {
+  const chunks = [];
+  let current = null;
+
+  units.forEach((unit, index) => {
+    if (current && (current.text.length + unit.length) <= maxLength) {
+      current.text += unit;
+      current.end = index;
+    } else {
+      current = { start: index, end: index, text: unit };
+      chunks.push(current);
+    }
+  });
+
+  return chunks;
+}
+
+/* Render text into an element as highlightable spans. */
+function renderInto(element, text) {
+  const units = buildUnits(text);
+  element.innerHTML = '';
+
+  const spans = units.map(unit => {
+    const span = document.createElement('span');
+    span.className = 'unit';
+    span.textContent = unit;
+    element.appendChild(span);
+    return span;
+  });
+
+  element.classList.toggle('empty', !text.trim());
+  return { units, spans };
+}
+
+let activeSpans = [];
+
+function clearHighlight() {
+  activeSpans.forEach(span => span.classList.remove('speaking'));
+}
+
+function highlightRange(start, end) {
+  clearHighlight();
+  for (let i = start; i <= end; i++) {
+    if (activeSpans[i]) activeSpans[i].classList.add('speaking');
+  }
+  if (activeSpans[start]) {
+    activeSpans[start].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+
+function updateCounts(text) {
+  const words = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
+  const chars = text.length;
+  counts.textContent = `${words.toLocaleString()} words · ${chars.toLocaleString()} chars`;
+}
+
+/* =========================================================
+   5. LOADING TEXT
+   ========================================================= */
+function loadText(text, message) {
+  loadedText = text;
+  renderInto(output, text);
+  updateCounts(text);
+
+  translatedOutput.style.display = 'none';
+  translatedOutput.innerHTML = '';
+  translatedTitle.style.display  = 'none';
+
+  clearHighlight();
+  setProgress(0);
+  if (message) setStatus(message, 'ok');
+}
+
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files[0];
+  fileInfo.textContent = file
+    ? 'Selected: ' + file.name
+    : 'No file selected — showing the built‑in sample story.';
+});
+
+readBtn.addEventListener('click', () => {
+  const file = fileInput.files[0];
+
+  if (!file) {
+    setStatus('⚠️ Please choose a file first.', 'warn');
+    return;
+  }
+
+  const reader = new FileReader();
+
+  reader.onload = event => {
+    const text = String(event.target.result || '');
+    loadText(
+      text,
+      `✅ Loaded "${file.name}" — ${text.trim().split(/\s+/).filter(Boolean).length} words.`
+    );
+  };
+
+  reader.onerror = () => setStatus('❌ Could not read the file.', 'err');
+
+  reader.readAsText(file);
+});
+
+sampleBtn.addEventListener('click', () => {
+  fileInput.value = '';
+  fileInfo.textContent = 'No file selected — showing the built‑in sample story.';
+  loadText(SAMPLE_TEXT, '✨ Sample story loaded. Press Speak to listen.');
+});
+
+/* =========================================================
+   6. VOICE SELECTION (male / female)
+   ========================================================= */
+const FEMALE_HINTS = [
+  'female','woman','zira','samantha','victoria','karen','moira','tessa','fiona',
+  'susan','allison','ava','joanna','salli','kimberly','amy','emma','nicole',
+  'olivia','aria','jenny','sonia','libby','hazel','heera','catherine','linda',
+  'marie','anna','elena','laura','alice','monica','paulina','yuna','kyoko',
+  'mei-jia','ting-ting','milena','yelda','zosia','laila','helena','kanya',
+  'nora','carmit','damayanti','google uk english female','google us english'
+];
+
+const MALE_HINTS = [
+  'male','man','david','mark','daniel','alex','fred','tom','james','george',
+  'oliver','thomas','guy','ryan','eric','christopher','brian','matthew','joey',
+  'justin','kevin','rishi','aaron','arthur','gordon','liam','diego','jorge',
+  'juan','luca','xander','google uk english male'
+];
+
+function detectGender(voice) {
+  const text = (voice.name + ' ' + (voice.voiceURI || '')).toLowerCase();
+
+  // check "female" BEFORE "male" — the word "female" contains "male"
+  if (text.includes('female')) return 'female';
+  if (text.includes('male'))   return 'male';
+
+  if (FEMALE_HINTS.some(hint => text.includes(hint))) return 'female';
+  if (MALE_HINTS.some(hint => text.includes(hint)))   return 'male';
+
+  return 'unknown';
+}
+
+function findVoice(langCode, gender) {
+  const voices = speechSynthesis.getVoices();
+  if (!voices.length) return null;
+
+  const wanted = LANGUAGES[langCode].speech.toLowerCase();
+  const prefix = wanted.split('-')[0];
+
+  let candidates = voices.filter(v => v.lang.replace('_', '-').toLowerCase() === wanted);
+  if (!candidates.length) {
+    candidates = voices.filter(v => v.lang.toLowerCase().startsWith(prefix));
+  }
+  if (!candidates.length) candidates = voices;
+
+  return candidates.find(v => detectGender(v) === gender) || candidates[0];
+}
+
+/* =========================================================
+   7. TRANSLATION (MyMemory free API — no key required)
+   ========================================================= */
+async function translateText(text, fromCode, toCode) {
+  const chunks = chunkUnits(buildUnits(text), 450);
+  const results = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    setStatus(`🌐 Translating… (${i + 1} / ${chunks.length})`, '');
+
+    const query = chunks[i].text.replace(/\s+/g, ' ').trim();
+    const url = 'https://api.mymemory.translated.net/get?q=' +
+                encodeURIComponent(query) +
+                '&langpair=' + encodeURIComponent(fromCode + '|' + toCode);
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Network error ' + response.status);
+
+    const data = await response.json();
+    const translated = data?.responseData?.translatedText;
+
+    if (!translated || /MYMEMORY WARNING/i.test(translated)) {
+      throw new Error('Translation service unavailable');
+    }
+
+    results.push(translated);
+
+    // be kind to the free API
+    await new Promise(resolve => setTimeout(resolve, 120));
+  }
+
+  return results.join(' ');
+}
+
+/* =========================================================
+   8. SPEECH
+   ========================================================= */
+const SPEECH_MAX = 220;
+let speechToken = 0;
+
+function speakText(text, langCode, gender, container) {
+  speechSynthesis.cancel();
+  clearHighlight();
+  setProgress(0);
+
+  const token = ++speechToken;
+  const { units, spans } = renderInto(container, text);
+  activeSpans = spans;
+
+  if (!units.length) {
+    setStatus('⚠️ There is nothing to speak.', 'warn');
+    return;
+  }
+
+  const chunks = chunkUnits(units, SPEECH_MAX);
+  const voice  = findVoice(langCode, gender);
+  const total  = chunks.length;
+
+  chunks.forEach((chunk, index) => {
+    const utterance = new SpeechSynthesisUtterance(
+      chunk.text.replace(/\s+/g, ' ').trim()
+    );
+
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang  = voice.lang;
+    } else {
+      utterance.lang = LANGUAGES[langCode].speech;
+    }
+
+    utterance.rate   = 1;
+    utterance.pitch  = (gender === 'female') ? 1.12 : 0.9;
+    utterance.volume = 1;
+
+    utterance.onstart = () => {
+      if (token !== speechToken) return;
+      highlightRange(chunk.start, chunk.end);
+      setProgress((index / total) * 100);
+    };
+
+    utterance.onend = () => {
+      if (token !== speechToken) return;
+      setProgress(((index + 1) / total) * 100);
+      if (index === total - 1) {
+        clearHighlight();
+        setStatus('✅ Finished reading.', 'ok');
+      }
+    };
+
+    utterance.onerror = event => {
+      if (token !== speechToken) return;
+      if (event.error === 'canceled' || event.error === 'interrupted') return;
+      setStatus('❌ Speech error: ' + event.error, 'err');
+    };
+
+    speechSynthesis.speak(utterance);
+  });
+
+  const voiceName = voice
+    ? `${voice.name} (${voice.lang})`
+    : 'default system voice';
+
+  setStatus(`🔊 Speaking with a ${gender} voice — ${voiceName}`, '');
+}
+
+/* =========================================================
+   9. SPEAK BUTTON
+   ========================================================= */
+speakBtn.addEventListener('click', async () => {
+  const text = (loadedText || '').trim();
+
+  if (!text) {
+    setStatus('⚠️ Load a file or use the sample story first.', 'warn');
+    return;
+  }
+
+  const gender = genderSelect.value;
+  const from   = sourceLang.value;
+  const to     = targetLang.value;
+
+  speakBtn.disabled = true;
+  setProgress(0);
+
+  try {
+    if (to !== 'none' && to !== from) {
+      try {
+        const translated = await translateText(text, LANGUAGES[from].mm, LANGUAGES[to].mm);
+
+        translatedTitle.style.display  = 'block';
+        translatedOutput.style.display = 'block';
+        translatedOutput.textContent   = translated;
+
+        speakText(translated, to, gender, translatedOutput);
+        return;
+      } catch (err) {
+        translatedTitle.style.display  = 'none';
+        translatedOutput.style.display = 'none';
+        setStatus('❌ Translation failed — reading the original text instead.', 'err');
+      }
+    } else if (to === from) {
+      setStatus('ℹ️ Source and target language are the same — no translation.', 'warn');
+    }
+
+    translatedTitle.style.display  = 'none';
+    translatedOutput.style.display = 'none';
+
+    speakText(text, from, gender, output);
+  } finally {
+    speakBtn.disabled = false;
+  }
+});
+
+/* =========================================================
+   10. STOP BUTTON
+   ========================================================= */
+stopBtn.addEventListener('click', () => {
+  speechToken++;
+  speechSynthesis.cancel();
+  clearHighlight();
+  setProgress(0);
+  setStatus('⏹ Stopped.', 'warn');
+});
+
+/* Keep voices fresh (some browsers load them asynchronously) */
+if (typeof speechSynthesis !== 'undefined') {
+  speechSynthesis.onvoiceschanged = () => { /* no-op, voices are looked up on demand */ };
+}
+
+window.addEventListener('beforeunload', () => speechSynthesis.cancel());
+
+/* =========================================================
+   11. BOOT — load the built-in story straight away
+   ========================================================= */
+loadText(SAMPLE_TEXT, 'Ready — press Speak to hear the story.');
+</script>
+
+</body>
+</html>
